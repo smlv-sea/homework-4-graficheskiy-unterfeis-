@@ -85,19 +85,6 @@ class SimpleTicketGUI:
             self.dll.GetAddTicketErrorStringRu.argtypes = [ctypes.c_int]
             print("GetAddTicketErrorStringRu function available")
     
-    def get_error_message(self, error_code):
-        """Получить текстовое сообщение об ошибке"""
-        error_messages = {
-            0: "Success - ticket added successfully",
-            1: "Duplicate ticket number - ticket with this number already exists",
-            2: "Invalid ticket number - number must be positive",
-            3: "Invalid parameters - check ticket parameters",
-            4: "Registry full - cannot add more tickets",
-            5: "Memory error - failed to allocate memory",
-            6: "Unknown error - internal DLL error"
-        }
-        return error_messages.get(error_code, f"Unknown error code: {error_code}")
-    
     def create_widgets(self):
         """Создание интерфейса"""
         # Главный фрейм
@@ -234,6 +221,36 @@ class SimpleTicketGUI:
             error_msg = self.get_error_message(result2)
             print(f"Failed to add test ticket #102: {error_msg}")
     
+    def get_error_message(self, error_code):
+        """Получить текстовое сообщение об ошибке по коду"""
+        # Сначала попробуем получить из DLL
+        dll_message = self.try_get_dll_error_message(error_code)
+        if dll_message:
+            return dll_message
+        
+        # Если не получилось, используем стандартные сообщения
+        error_messages = {
+            0: "Success",
+            1: "Ticket with this number already exists",
+            2: "Invalid ticket number",
+            3: "Invalid parameters",
+            4: "Registry is full",
+            5: "Memory allocation failed",
+            6: "Unknown error"
+        }
+        return error_messages.get(error_code, f"Error code: {error_code}")
+    
+    def try_get_dll_error_message(self, error_code):
+        """Попытаться получить сообщение об ошибке из DLL"""
+        try:
+            if hasattr(self.dll, 'GetAddTicketErrorString'):
+                error_ptr = self.dll.GetAddTicketErrorString(error_code)
+                if error_ptr:
+                    return ctypes.string_at(error_ptr).decode('utf-8', errors='ignore')
+        except:
+            pass
+        return None
+    
     def add_ticket(self):
         """Добавить билет с проверкой ошибок"""
         try:
@@ -241,7 +258,6 @@ class SimpleTicketGUI:
             ticket_type = self.ticket_type.get()
             
             success = False
-            error_msg = ""
             
             if ticket_type == "limited":
                 rides = int(self.max_rides.get())
@@ -256,8 +272,7 @@ class SimpleTicketGUI:
                     msg = f"Ticket #{num} added (limited, {rides} rides)"
                     self.add_result.set(f"✓ Ticket #{num} added successfully")
                 else:
-                    # Пробуем получить сообщение об ошибке из DLL
-                    error_msg = self.get_error_from_dll(result)
+                    error_msg = self.get_error_message(result)
                     msg = f"Failed to add ticket #{num}: {error_msg}"
                     self.add_result.set(f"✗ {error_msg}")
                     
@@ -274,8 +289,7 @@ class SimpleTicketGUI:
                     msg = f"Ticket #{num} added (unlimited)"
                     self.add_result.set(f"✓ Ticket #{num} added successfully")
                 else:
-                    # Пробуем получить сообщение об ошибке из DLL
-                    error_msg = self.get_error_from_dll(result)
+                    error_msg = self.get_error_message(result)
                     msg = f"Failed to add ticket #{num}: {error_msg}"
                     self.add_result.set(f"✗ {error_msg}")
             
@@ -293,7 +307,18 @@ class SimpleTicketGUI:
                 # Очищаем поле результата через 3 секунды
                 self.root.after(3000, lambda: self.add_result.set(""))
             else:
-                messagebox.showerror("Error", msg)
+                # Определяем заголовок и детализированное сообщение
+                if result == 1:  # Дубликат
+                    title = "Duplicate Ticket"
+                    if num < 1000:
+                        detailed_msg = f"Ticket #{num:03d} already exists!\n\nPlease use a different ticket number."
+                    else:
+                        detailed_msg = f"Ticket #{num} already exists!\n\nPlease use a different ticket number."
+                else:
+                    title = "Error"
+                    detailed_msg = msg
+                
+                messagebox.showerror(title, detailed_msg)
                 
                 # Очищаем поле результата через 5 секунды
                 self.root.after(5000, lambda: self.add_result.set(""))
@@ -304,20 +329,6 @@ class SimpleTicketGUI:
         except Exception as e:
             messagebox.showerror("Error", f"Unexpected error: {e}")
             self.add_result.set(f"✗ Error: {str(e)}")
-    
-    def get_error_from_dll(self, error_code):
-        """Получить сообщение об ошибке из DLL, если доступно"""
-        try:
-            if hasattr(self.dll, 'GetAddTicketErrorStringRu'):
-                error_ptr = self.dll.GetAddTicketErrorStringRu(error_code)
-                return ctypes.string_at(error_ptr).decode('utf-8', errors='ignore')
-            elif hasattr(self.dll, 'GetAddTicketErrorString'):
-                error_ptr = self.dll.GetAddTicketErrorString(error_code)
-                return ctypes.string_at(error_ptr).decode('utf-8', errors='ignore')
-            else:
-                return self.get_error_message(error_code)
-        except:
-            return self.get_error_message(error_code)
     
     def check_ticket(self):
         """Проверить билет"""
