@@ -21,7 +21,7 @@ class SimpleTicketGUI:
         
         try:
             self.dll = ctypes.CDLL(dll_path)
-            print("DLL loaded")
+            print("DLL loaded successfully")
         except Exception as e:
             messagebox.showerror("Error", f"Cannot load DLL:\n{e}")
             root.destroy()
@@ -47,10 +47,18 @@ class SimpleTicketGUI:
         
         self.dll.DeleteTicketRegistry.argtypes = [ctypes.c_void_p]
         
+        # Функции добавления с возвращаемыми значениями
+        self.dll.AddLimitedTicket.restype = ctypes.c_int
         self.dll.AddLimitedTicket.argtypes = [
             ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int
         ]
         
+        self.dll.AddTimedTicket.restype = ctypes.c_int
+        self.dll.AddTimedTicket.argtypes = [
+            ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int
+        ]
+        
+        self.dll.AddUnlimitedTicket.restype = ctypes.c_int
         self.dll.AddUnlimitedTicket.argtypes = [
             ctypes.c_void_p, ctypes.c_int, ctypes.c_char_p
         ]
@@ -64,6 +72,31 @@ class SimpleTicketGUI:
         self.dll.GetTicketCount.argtypes = [ctypes.c_void_p]
         
         self.dll.RunSimpleTest.argtypes = []
+        
+        # Функция для получения сообщения об ошибке (если есть в DLL)
+        if hasattr(self.dll, 'GetAddTicketErrorString'):
+            self.dll.GetAddTicketErrorString.restype = ctypes.c_char_p
+            self.dll.GetAddTicketErrorString.argtypes = [ctypes.c_int]
+            print("GetAddTicketErrorString function available")
+        
+        # Также проверим русскую версию
+        if hasattr(self.dll, 'GetAddTicketErrorStringRu'):
+            self.dll.GetAddTicketErrorStringRu.restype = ctypes.c_char_p
+            self.dll.GetAddTicketErrorStringRu.argtypes = [ctypes.c_int]
+            print("GetAddTicketErrorStringRu function available")
+    
+    def get_error_message(self, error_code):
+        """Получить текстовое сообщение об ошибке"""
+        error_messages = {
+            0: "Success - ticket added successfully",
+            1: "Duplicate ticket number - ticket with this number already exists",
+            2: "Invalid ticket number - number must be positive",
+            3: "Invalid parameters - check ticket parameters",
+            4: "Registry full - cannot add more tickets",
+            5: "Memory error - failed to allocate memory",
+            6: "Unknown error - internal DLL error"
+        }
+        return error_messages.get(error_code, f"Unknown error code: {error_code}")
     
     def create_widgets(self):
         """Создание интерфейса"""
@@ -132,6 +165,13 @@ class SimpleTicketGUI:
         # Кнопка
         ttk.Button(parent, text="Add Ticket", command=self.add_ticket, 
                   width=15).grid(row=6, column=0, columnspan=2, pady=20)
+        
+        # Метка для отображения результата добавления
+        self.add_result = tk.StringVar()
+        self.add_result.set("")
+        add_result_label = ttk.Label(parent, textvariable=self.add_result,
+                                    font=('Arial', 10))
+        add_result_label.grid(row=7, column=0, columnspan=2, pady=5)
     
     def setup_check_tab(self, parent):
         """Вкладка проверки билета"""
@@ -177,32 +217,107 @@ class SimpleTicketGUI:
     def add_test_tickets(self):
         """Добавление тестовых билетов"""
         current_time = int(time.time())
+        
         # Ограниченный билет
-        self.dll.AddLimitedTicket(self.registry, 101, current_time, 3)
+        result1 = self.dll.AddLimitedTicket(self.registry, 101, current_time, 3)
+        if result1 == 0:
+            print("Test ticket added: #101 (limited)")
+        else:
+            error_msg = self.get_error_message(result1)
+            print(f"Failed to add test ticket #101: {error_msg}")
+        
         # Бессрочный билет
-        self.dll.AddUnlimitedTicket(self.registry, 102, b"VIP Client")
-        print("Test tickets added: #101 (limited), #102 (unlimited)")
+        result2 = self.dll.AddUnlimitedTicket(self.registry, 102, b"VIP Client")
+        if result2 == 0:
+            print("Test ticket added: #102 (unlimited)")
+        else:
+            error_msg = self.get_error_message(result2)
+            print(f"Failed to add test ticket #102: {error_msg}")
     
     def add_ticket(self):
-        """Добавить билет"""
+        """Добавить билет с проверкой ошибок"""
         try:
             num = int(self.ticket_num.get())
             ticket_type = self.ticket_type.get()
             
+            success = False
+            error_msg = ""
+            
             if ticket_type == "limited":
                 rides = int(self.max_rides.get())
-                self.dll.AddLimitedTicket(self.registry, num, int(time.time()), rides)
-                msg = f"Ticket #{num} added (limited, {rides} rides)"
-            else:
-                reason = self.reason.get().encode('ascii')
-                self.dll.AddUnlimitedTicket(self.registry, num, reason)
-                msg = f"Ticket #{num} added (unlimited)"
+                if rides <= 0:
+                    messagebox.showerror("Error", "Number of rides must be positive")
+                    return
+                    
+                result = self.dll.AddLimitedTicket(self.registry, num, int(time.time()), rides)
+                
+                if result == 0:
+                    success = True
+                    msg = f"Ticket #{num} added (limited, {rides} rides)"
+                    self.add_result.set(f"✓ Ticket #{num} added successfully")
+                else:
+                    # Пробуем получить сообщение об ошибке из DLL
+                    error_msg = self.get_error_from_dll(result)
+                    msg = f"Failed to add ticket #{num}: {error_msg}"
+                    self.add_result.set(f"✗ {error_msg}")
+                    
+            else:  # unlimited
+                reason = self.reason.get()
+                if not reason:
+                    messagebox.showerror("Error", "Please enter a reason for unlimited ticket")
+                    return
+                    
+                result = self.dll.AddUnlimitedTicket(self.registry, num, reason.encode('utf-8'))
+                
+                if result == 0:
+                    success = True
+                    msg = f"Ticket #{num} added (unlimited)"
+                    self.add_result.set(f"✓ Ticket #{num} added successfully")
+                else:
+                    # Пробуем получить сообщение об ошибке из DLL
+                    error_msg = self.get_error_from_dll(result)
+                    msg = f"Failed to add ticket #{num}: {error_msg}"
+                    self.add_result.set(f"✗ {error_msg}")
             
+            # Обновляем статус
             self.status.set(msg)
-            messagebox.showinfo("Success", msg)
             
+            # Показываем соответствующее сообщение
+            if success:
+                messagebox.showinfo("Success", msg)
+                
+                # Обновляем количество билетов в инфо-вкладке
+                count = self.dll.GetTicketCount(self.registry)
+                self.info_text.set(f"Ticket #{num} added successfully!\nTotal tickets: {count}")
+                
+                # Очищаем поле результата через 3 секунды
+                self.root.after(3000, lambda: self.add_result.set(""))
+            else:
+                messagebox.showerror("Error", msg)
+                
+                # Очищаем поле результата через 5 секунды
+                self.root.after(5000, lambda: self.add_result.set(""))
+                
         except ValueError:
             messagebox.showerror("Error", "Please enter valid numbers")
+            self.add_result.set("✗ Invalid input values")
+        except Exception as e:
+            messagebox.showerror("Error", f"Unexpected error: {e}")
+            self.add_result.set(f"✗ Error: {str(e)}")
+    
+    def get_error_from_dll(self, error_code):
+        """Получить сообщение об ошибке из DLL, если доступно"""
+        try:
+            if hasattr(self.dll, 'GetAddTicketErrorStringRu'):
+                error_ptr = self.dll.GetAddTicketErrorStringRu(error_code)
+                return ctypes.string_at(error_ptr).decode('utf-8', errors='ignore')
+            elif hasattr(self.dll, 'GetAddTicketErrorString'):
+                error_ptr = self.dll.GetAddTicketErrorString(error_code)
+                return ctypes.string_at(error_ptr).decode('utf-8', errors='ignore')
+            else:
+                return self.get_error_message(error_code)
+        except:
+            return self.get_error_message(error_code)
     
     def check_ticket(self):
         """Проверить билет"""
@@ -214,44 +329,52 @@ class SimpleTicketGUI:
             
             if result == 0:
                 self.result_text.set(f"Ticket #{num}: ✓ ALLOWED")
-                self.result_label_color("green")
+                self.set_result_label_color("green")
             elif result == 1:
                 self.result_text.set(f"Ticket #{num}: ✗ DENIED")
-                self.result_label_color("red")
+                self.set_result_label_color("red")
             elif result == 2:
                 self.result_text.set(f"Ticket #{num}: ⚠ ALARM")
-                self.result_label_color("orange")
+                self.set_result_label_color("orange")
             else:
-                self.result_text.set(f"Ticket #{num}: ? UNKNOWN")
-                self.result_label_color("black")
+                self.result_text.set(f"Ticket #{num}: ? UNKNOWN (Code: {result})")
+                self.set_result_label_color("black")
             
-            self.status.set(f"Checked ticket #{num}")
+            self.status.set(f"Checked ticket #{num} at time {current_time}")
             
         except ValueError:
             messagebox.showerror("Error", "Please enter valid numbers")
     
-    def result_label_color(self, color):
-        """Обновить цвет результата"""
-        for widget in self.root.winfo_children():
-            if isinstance(widget, ttk.Notebook):
-                for tab in widget.winfo_children():
-                    for child in tab.winfo_children():
-                        if isinstance(child, ttk.Label) and hasattr(child, 'tk'):
-                            try:
-                                child.configure(foreground=color)
-                            except:
-                                pass
+    def set_result_label_color(self, color):
+        """Обновить цвет результата проверки"""
+        try:
+            # Находим все виджеты Label и обновляем цвет того, что содержит результат
+            for widget in self.root.winfo_children():
+                if isinstance(widget, ttk.Notebook):
+                    for tab in widget.winfo_children():
+                        for child in tab.winfo_children():
+                            if isinstance(child, ttk.Label) and hasattr(child, 'cget'):
+                                text = child.cget('textvariable')
+                                if text == str(self.result_text):
+                                    child.configure(foreground=color)
+                                    return
+        except:
+            pass
     
     def run_test(self):
         """Запустить тест"""
         self.dll.RunSimpleTest()
         self.info_text.set("Test completed!\nCheck console for output.")
         self.status.set("Test executed")
+        
+        # Обновляем количество билетов после теста
+        count = self.dll.GetTicketCount(self.registry)
+        self.info_text.set(f"Test completed!\nTotal tickets: {count}")
     
     def show_count(self):
         """Показать количество билетов"""
         count = self.dll.GetTicketCount(self.registry)
-        self.info_text.set(f"Total tickets: {count}")
+        self.info_text.set(f"Total tickets in registry: {count}")
         self.status.set(f"Ticket count: {count}")
     
     def clear_all(self):
@@ -266,11 +389,18 @@ class SimpleTicketGUI:
             
             self.info_text.set("All cleared!\nTest tickets added.")
             self.status.set("Registry cleared")
+            
+            # Очищаем поле результата добавления
+            self.add_result.set("")
     
     def on_closing(self):
         """Очистка при закрытии"""
         if hasattr(self, 'registry'):
-            self.dll.DeleteTicketRegistry(self.registry)
+            try:
+                self.dll.DeleteTicketRegistry(self.registry)
+                print("Registry deleted on exit")
+            except:
+                pass
         self.root.destroy()
 
 def main():
