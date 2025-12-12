@@ -1,5 +1,4 @@
-﻿# simple_ticket_gui.py
-import tkinter as tk
+﻿import tkinter as tk
 from tkinter import ttk, messagebox
 import ctypes
 import os
@@ -73,18 +72,13 @@ class SimpleTicketGUI:
         
         self.dll.RunSimpleTest.argtypes = []
         
-        # Функция для получения сообщения об ошибке (если есть в DLL)
+        # Функция для получения сообщения об ошибке 
         if hasattr(self.dll, 'GetAddTicketErrorString'):
             self.dll.GetAddTicketErrorString.restype = ctypes.c_char_p
             self.dll.GetAddTicketErrorString.argtypes = [ctypes.c_int]
             print("GetAddTicketErrorString function available")
         
-        # Также проверим русскую версию
-        if hasattr(self.dll, 'GetAddTicketErrorStringRu'):
-            self.dll.GetAddTicketErrorStringRu.restype = ctypes.c_char_p
-            self.dll.GetAddTicketErrorStringRu.argtypes = [ctypes.c_int]
-            print("GetAddTicketErrorStringRu function available")
-    
+
     def create_widgets(self):
         """Создание интерфейса"""
         # Главный фрейм
@@ -228,18 +222,7 @@ class SimpleTicketGUI:
         if dll_message:
             return dll_message
         
-        # Если не получилось, используем стандартные сообщения
-        error_messages = {
-            0: "Success",
-            1: "Ticket with this number already exists",
-            2: "Invalid ticket number",
-            3: "Invalid parameters",
-            4: "Registry is full",
-            5: "Memory allocation failed",
-            6: "Unknown error"
-        }
-        return error_messages.get(error_code, f"Error code: {error_code}")
-    
+          
     def try_get_dll_error_message(self, error_code):
         """Попытаться получить сообщение об ошибке из DLL"""
         try:

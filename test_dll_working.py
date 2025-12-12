@@ -1,5 +1,4 @@
-﻿# test_dll_working.py
-import ctypes
+﻿import ctypes
 import os
 
 def main():
@@ -89,26 +88,7 @@ def main():
             dll.GetAddTicketErrorString.argtypes = [ctypes.c_int]
             print("✓ GetAddTicketErrorString - configured")
         
-        # 11. Получение сообщения об ошибке добавления на русском (если есть)
-        if hasattr(dll, 'GetAddTicketErrorStringRu'):
-            dll.GetAddTicketErrorStringRu.restype = ctypes.c_char_p
-            dll.GetAddTicketErrorStringRu.argtypes = [ctypes.c_int]
-            print("✓ GetAddTicketErrorStringRu - configured")
-        
-        # Функция для получения сообщения об ошибке
-        def get_error_message(error_code):
-            """Получить текстовое сообщение об ошибке"""
-            error_messages = {
-                0: "Success",
-                1: "Ticket with this number already exists",
-                2: "Invalid ticket number",
-                3: "Invalid parameters",
-                4: "Registry is full",
-                5: "Memory allocation failed",
-                6: "Unknown error"
-            }
-            return error_messages.get(error_code, f"Unknown error code: {error_code}")
-        
+
         print("\n=== TESTING DLL FUNCTIONS ===")
         
         # Запускаем встроенный тест
